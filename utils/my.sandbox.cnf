@@ -1,0 +1,21 @@
+
+[mysql]
+prompt='mysql [\h] {\u} (\d) > '
+#
+
+[client]
+user               = msandbox
+password           = msandbox
+port               = 3306
+socket             = /tmp/mysql_sandbox3306.sock
+
+[mysqld]
+user               = msandbox
+port               = 3306
+socket             = /tmp/mysql_sandbox3306.sock
+basedir            = /usr/local/mysql
+datadir            = /home/loushuai/msandbox_1234/data
+tmpdir             = /home/loushuai/msandbox_1234/tmp
+lower_case_table_names = 0
+pid-file           = /home/loushuai/msandbox_1234/data/mysql_sandbox3306.pid
+bind-address       = 127.0.0.1
