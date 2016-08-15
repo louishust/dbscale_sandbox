@@ -2,7 +2,9 @@ package utils
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"os"
 	"os/exec"
 	"strconv"
@@ -138,4 +140,122 @@ func MySQLInstallReplication(mysqlDir string, installPath string, port int) {
 	check(err)
 	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, slaveDir, slaveCnf)
 	check(err)
+}
+
+func ScriptsInCode(scripts map[string]string, options map[string]string) {
+	dbUser := options["dbUser"]
+	rwUser := options["rwUser"]
+	roUser := options["roUser"]
+	remoteAccess := options["remoteAccess"]
+	dbPassword := options["dbPassword"]
+	replUser := options["replUser"]
+	replPassword := options["replPassword"]
+	grantsMySQLFormat := `use mysql;
+set password=password(%s);
+grant all on *.* to %s@'%s' identified by '%s';
+grant all on *.* to %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+    SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+    on *.* to %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+    SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+    on *.* to %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'localhost' identified by '%s';
+grant REPLICATION SLAVE on *.* to %s@'%s' identified by '%s';
+delete from user where password='';
+delete from db where user='';
+flush privileges;
+create database if not exists test;
+`
+	grantsMysql := fmt.Sprintf(grantsMySQLFormat, dbPassword, dbUser, remoteAccess, dbPassword, dbUser, dbPassword, rwUser, dbPassword, rwUser, remoteAccess, dbPassword, roUser, remoteAccess, dbPassword, roUser, dbPassword, replUser, remoteAccess, replPassword)
+	scripts["grants.mysql"] = grantsMysql
+	grants576MySQLFormat := `use mysql;
+set password='%s';
+-- delete from tables_priv;
+-- delete from columns_priv;
+-- delete from db;
+delete from user where user not in ('root', 'mysql.sys', 'mysqlxsys');
+
+flush privileges;
+
+create user %s@'%s' identified by '%s';
+grant all on *.* to %s@'%s' ;
+
+create user %s@'localhost' identified by '%s';
+grant all on *.* to %s@'localhost';
+
+create user %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+     SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+     on *.* to %s@'localhost';
+
+create user %s@'%s' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+    SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+    on *.* to %s@'%s';
+     
+create user %s@'%s' identified by '%s';
+create user %s@'localhost' identified by '%s';
+create user %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'%s';
+grant SELECT,EXECUTE on *.* to %s@'localhost';
+grant REPLICATION SLAVE on *.* to %s@'%s';
+create schema if not exists test;
+`
+	grants576Mysql := fmt.Sprintf(grants576MySQLFormat, dbPassword, dbUser, remoteAccess, dbPassword, dbUser, remoteAccess, dbUser, dbPassword, dbUser, rwUser, dbPassword, rwUser, rwUser, remoteAccess, dbPassword, rwUser, remoteAccess, roUser, remoteAccess, dbPassword, roUser, dbPassword, replUser, remoteAccess, replPassword, roUser, remoteAccess, roUser, replUser, remoteAccess)
+	scripts["grants_5_7_6.mysql"] = grants576Mysql
+}
+
+func MySQLGrantsMySQL(installPath string, code string, code576 string) {
+	masterDir := installPath + "/master"
+	slaveDir := installPath + "/slave"
+	masterGrant := masterDir + "/grants.mysql"
+	slaveGrant := slaveDir + "/grants.mysql"
+	masterGrant576 := masterDir + "/grants_5_7_6.mysql"
+	slaveGrant576 := slaveDir + "/grants_5_7_6.mysql"
+
+	grantsCode := []byte(code)
+	grants576Code := []byte(code576)
+
+	masterFile, err := os.Create(masterGrant)
+	check(err)
+	slaveFile, err := os.Create(slaveGrant)
+	check(err)
+	master576File, err := os.Create(masterGrant576)
+	check(err)
+	slave576File, err := os.Create(slaveGrant576)
+	check(err)
+
+	_, err = masterFile.Write(grantsCode)
+	check(err)
+	_, err = slaveFile.Write(grantsCode)
+	check(err)
+	_, err = master576File.Write(grants576Code)
+	check(err)
+	_, err = slave576File.Write(grants576Code)
+	check(err)
+
+	masterFile.Close()
+	master576File.Close()
+	slaveFile.Close()
+	slave576File.Close()
+}
+
+func GetOptions(options map[string]string) {
+	options["dbUser"] = "dbscale"
+	options["dbPassword"] = "dbscale"
+	options["remoteAccess"] = "127.%"
+	options["roUser"] = "dbscale_ro"
+	options["rwUser"] = "dbscale_rw"
+	options["replUser"] = "rdbscale"
+	options["replPassword"] = "rdbscale"
+}
+
+func RunOperat(dsn string, stmt string) {
+	db, err := sql.Open("mysql", "dsn")
+	check(err)
+	_, exec_err := db.Exec(stmt)
+	check(exec_err)
+	db.Close()
 }

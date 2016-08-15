@@ -57,4 +57,15 @@ func main() {
 
 	utils.MySQLInstallReplication(*mysqlDirPath, rep1Dir, start_port)
 	utils.MySQLInstallReplication(*mysqlDirPath, rep2Dir, start_port+2)
+
+	options := make(map[string]string)
+	utils.GetOptions(options)
+
+	scripts := make(map[string]string)
+	utils.ScriptsInCode(scripts, options)
+
+	grantsCode := scripts["grants.mysql"]
+	grants576Code := scripts["grants_5_7_6.mysql"]
+	utils.MySQLGrantsMySQL(rep1Dir, grantsCode, grants576Code)
+	utils.MySQLGrantsMySQL(rep2Dir, grantsCode, grants576Code)
 }
