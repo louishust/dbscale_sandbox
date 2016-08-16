@@ -142,7 +142,7 @@ func MySQLInstallReplication(mysqlDir string, installPath string, port int) {
 	check(err)
 }
 
-func ScriptsInCode(scripts map[string]string, options map[string]string) {
+func InitGrantScripts(scripts map[string]string, options map[string]string) {
 	dbUser := options["dbUser"]
 	rwUser := options["rwUser"]
 	roUser := options["roUser"]
@@ -207,42 +207,26 @@ create schema if not exists test;
 	scripts["grants_5_7_6.mysql"] = grants576Mysql
 }
 
-func MySQLGrantsMySQL(installPath string, code string, code576 string) {
-	masterDir := installPath + "/master"
-	slaveDir := installPath + "/slave"
-	masterGrant := masterDir + "/grants.mysql"
-	slaveGrant := slaveDir + "/grants.mysql"
-	masterGrant576 := masterDir + "/grants_5_7_6.mysql"
-	slaveGrant576 := slaveDir + "/grants_5_7_6.mysql"
+func MySQLInstallGrantFile(installPath string, code string) {
+	grantsFilePath := installPath + "/mysql.grants"
 
 	grantsCode := []byte(code)
-	grants576Code := []byte(code576)
 
-	masterFile, err := os.Create(masterGrant)
-	check(err)
-	slaveFile, err := os.Create(slaveGrant)
-	check(err)
-	master576File, err := os.Create(masterGrant576)
-	check(err)
-	slave576File, err := os.Create(slaveGrant576)
+	grantsFile, err := os.Create(grantsFilePath)
 	check(err)
 
-	_, err = masterFile.Write(grantsCode)
-	check(err)
-	_, err = slaveFile.Write(grantsCode)
-	check(err)
-	_, err = master576File.Write(grants576Code)
-	check(err)
-	_, err = slave576File.Write(grants576Code)
+	_, err = grantsFile.Write(grantsCode)
 	check(err)
 
-	masterFile.Close()
-	master576File.Close()
-	slaveFile.Close()
-	slave576File.Close()
+	grantsFile.Close()
 }
 
-func GetOptions(options map[string]string) {
+func MySQLInstallRepGrantFile(grantsFilePath string, dsn string) {
+	grantsInstallSQL := "source " + grantsFilePath
+	RunOperat(dsn, grantsInstallSQL)
+}
+
+func InitGrantOptions(options map[string]string) {
 	options["dbUser"] = "dbscale"
 	options["dbPassword"] = "dbscale"
 	options["remoteAccess"] = "127.%"
