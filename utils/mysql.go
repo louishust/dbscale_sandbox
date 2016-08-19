@@ -119,7 +119,7 @@ func MySQLInstallDB(mysqlDir string, dataDir string) error {
 	return err
 }
 
-func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, partation2InstallPath string, port int) {
+func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, partation2InstallPath string, authInstallPath string, port int) {
 	/** partation1 MySQL path init **/
 	partation1MasterDir := partation1InstallPath + "/master"
 	partation1SlaveDir := partation1InstallPath + "/slave"
@@ -140,32 +140,56 @@ func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, part
 	partation2MasterCnf := partation2MasterDir + "/my.sandbox.cnf"
 	partation2SlaveCnf := partation2SlaveDir + "/my.sandbox.cnf"
 
-	/** install partation1 master */
+	/** auth MySQL path init **/
+	authMasterDir := authInstallPath + "/master"
+	authSlaveDir := authInstallPath + "/slave"
+
+	authMasterDataDir := authMasterDir + "/data"
+	authSlaveDataDir := authSlaveDir + "/data"
+
+	authMasterCnf := authMasterDir + "/my.sandbox.cnf"
+	authSlaveCnf := authSlaveDir + "/my.sandbox.cnf"
+
+	/** install partation1 master **/
 	os.MkdirAll(partation1MasterDataDir, 0777)
 	err := MySQLInstallDB(mysqlDir, partation1MasterDataDir)
 	Check(err)
 	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation1MasterDir, partation1MasterCnf)
 	Check(err)
 
-	/** install partation1 slave */
+	/** install partation1 slave **/
 	os.MkdirAll(partation1SlaveDataDir, 0777)
 	err = MySQLInstallDB(mysqlDir, partation1SlaveDataDir)
 	Check(err)
 	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation1SlaveDir, partation1SlaveCnf)
 	Check(err)
 
-	/** install partation2 master */
+	/** install partation2 master **/
 	os.MkdirAll(partation2MasterDataDir, 0777)
 	err = MySQLInstallDB(mysqlDir, partation2MasterDataDir)
 	Check(err)
-	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation2MasterDir, partation2MasterCnf)
+	err = InitMySQLConfigFile(port+2, "dbscale", "dbscale", mysqlDir, partation2MasterDir, partation2MasterCnf)
 	Check(err)
 
-	/** install partation2 slave */
+	/** install partation2 slave **/
 	os.MkdirAll(partation2SlaveDataDir, 0777)
 	err = MySQLInstallDB(mysqlDir, partation2SlaveDataDir)
 	Check(err)
-	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation2SlaveDir, partation2SlaveCnf)
+	err = InitMySQLConfigFile(port+3, "dbscale", "dbscale", mysqlDir, partation2SlaveDir, partation2SlaveCnf)
+	Check(err)
+
+	/** install auth master **/
+	os.MkdirAll(authMasterDataDir, 0777)
+	err = MySQLInstallDB(mysqlDir, authMasterDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port+2, "dbscale", "dbscale", mysqlDir, authMasterDir, authMasterCnf)
+	Check(err)
+
+	/** install auth slave **/
+	os.MkdirAll(authSlaveDataDir, 0777)
+	err = MySQLInstallDB(mysqlDir, authSlaveDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port+3, "dbscale", "dbscale", mysqlDir, authSlaveDir, authSlaveCnf)
 	Check(err)
 }
 

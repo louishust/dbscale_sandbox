@@ -44,6 +44,7 @@ func main() {
 
 	rep1Dir := *installPath + "/rep_mysql_sandbox1"
 	rep2Dir := *installPath + "/rep_mysql_sandbox2"
+	authDir := *installPath + "/auth_mysql_sandbox"
 
 	ret1, _ := exists(rep1Dir)
 	ret2, _ := exists(rep2Dir)
@@ -54,8 +55,9 @@ func main() {
 
 	os.MkdirAll(rep1Dir, 0777)
 	os.MkdirAll(rep2Dir, 0777)
+	os.MkdirAll(authDir, 0777)
 
-	utils.MySQLInstallReplication(*mysqlDirPath, rep1Dir, rep2Dir, start_port)
+	utils.MySQLInstallReplication(*mysqlDirPath, rep1Dir, rep2Dir, authDir, start_port)
 
 	grantsFilePath := utils.MySQLInstallGrantFile(*mysqlDirPath, *installPath)
 	fmt.Println(grantsFilePath)
