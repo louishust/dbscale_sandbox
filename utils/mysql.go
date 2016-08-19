@@ -53,7 +53,7 @@ func Check(e error) {
 }
 
 func InitMySQLConfigFile(port int, user string, password string,
-	mysqlDir string, sandbox string, filename string) error {
+	mysqlDir string, sandbox string, filename string, retChan chan error) {
 	format := `
 [mysql]
 prompt='mysql [\h] {\u} (\d) > '
@@ -87,7 +87,7 @@ bind-address       = 127.0.0.1
 	err = f.Sync()
 	Check(err)
 
-	return err
+	retChan <- err
 }
 
 func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
@@ -108,7 +108,7 @@ func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
 	}
 }
 
-func MySQLInstallDB(mysqlDir string, dataDir string) error {
+func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
 	var mysql_install_db = mysqlDir + "/scripts/mysql_install_db"
 	var option1 = "--basedir=" + mysqlDir
 	var option2 = "--datadir=" + dataDir
@@ -116,7 +116,7 @@ func MySQLInstallDB(mysqlDir string, dataDir string) error {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	var err = cmd.Run()
-	return err
+	retChan <- err
 }
 
 func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, partation2InstallPath string, authInstallPath string, port int) {
@@ -150,47 +150,47 @@ func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, part
 	authMasterCnf := authMasterDir + "/my.sandbox.cnf"
 	authSlaveCnf := authSlaveDir + "/my.sandbox.cnf"
 
-	/** install partation1 master **/
+	retChan := make(chan error, 12)
+
+	/** make dataDir **/
 	os.MkdirAll(partation1MasterDataDir, 0777)
-	err := MySQLInstallDB(mysqlDir, partation1MasterDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation1MasterDir, partation1MasterCnf)
-	Check(err)
+	os.MkdirAll(partation1SlaveDataDir, 0777)
+
+	os.MkdirAll(partation2MasterDataDir, 0777)
+	os.MkdirAll(partation2SlaveDataDir, 0777)
+
+	os.MkdirAll(authMasterDataDir, 0777)
+	os.MkdirAll(authSlaveDataDir, 0777)
+
+	/** install partation1 master **/
+	go MySQLInstallDB(mysqlDir, partation1MasterDataDir, retChan)
+	go InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation1MasterDir, partation1MasterCnf, retChan)
 
 	/** install partation1 slave **/
-	os.MkdirAll(partation1SlaveDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, partation1SlaveDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation1SlaveDir, partation1SlaveCnf)
-	Check(err)
+	go MySQLInstallDB(mysqlDir, partation1SlaveDataDir, retChan)
+	go InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation1SlaveDir, partation1SlaveCnf, retChan)
 
 	/** install partation2 master **/
-	os.MkdirAll(partation2MasterDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, partation2MasterDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port+2, "dbscale", "dbscale", mysqlDir, partation2MasterDir, partation2MasterCnf)
-	Check(err)
+	go MySQLInstallDB(mysqlDir, partation2MasterDataDir, retChan)
+	go InitMySQLConfigFile(port+2, "dbscale", "dbscale", mysqlDir, partation2MasterDir, partation2MasterCnf, retChan)
 
 	/** install partation2 slave **/
-	os.MkdirAll(partation2SlaveDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, partation2SlaveDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port+3, "dbscale", "dbscale", mysqlDir, partation2SlaveDir, partation2SlaveCnf)
-	Check(err)
+	go MySQLInstallDB(mysqlDir, partation2SlaveDataDir, retChan)
+	go InitMySQLConfigFile(port+3, "dbscale", "dbscale", mysqlDir, partation2SlaveDir, partation2SlaveCnf, retChan)
 
 	/** install auth master **/
-	os.MkdirAll(authMasterDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, authMasterDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port+2, "dbscale", "dbscale", mysqlDir, authMasterDir, authMasterCnf)
-	Check(err)
+	go MySQLInstallDB(mysqlDir, authMasterDataDir, retChan)
+	go InitMySQLConfigFile(port+4, "dbscale", "dbscale", mysqlDir, authMasterDir, authMasterCnf, retChan)
 
 	/** install auth slave **/
-	os.MkdirAll(authSlaveDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, authSlaveDataDir)
-	Check(err)
-	err = InitMySQLConfigFile(port+3, "dbscale", "dbscale", mysqlDir, authSlaveDir, authSlaveCnf)
-	Check(err)
+	go MySQLInstallDB(mysqlDir, authSlaveDataDir, retChan)
+	go InitMySQLConfigFile(port+5, "dbscale", "dbscale", mysqlDir, authSlaveDir, authSlaveCnf, retChan)
+
+	/** check return channel **/
+	for i := 0; i < 12; i++ {
+		err := <-retChan
+		Check(err)
+	}
 }
 
 func InitGrantScripts(scripts map[string]string) {
