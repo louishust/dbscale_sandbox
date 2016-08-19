@@ -45,7 +45,7 @@ func FindMySQLInstallDir() (string, error) {
 	return strings.TrimSuffix(out.String(), "\n"), nil
 }
 
-func check(e error) {
+func Check(e error) {
 	if e != nil {
 		fmt.Println(e)
 		panic(e)
@@ -81,11 +81,11 @@ bind-address       = 127.0.0.1
 	f, err := os.Create(filename)
 	defer f.Close()
 
-	check(err)
+	Check(err)
 	_, err = f.WriteString(context)
-	check(err)
+	Check(err)
 	err = f.Sync()
-	check(err)
+	Check(err)
 
 	return err
 }
@@ -119,30 +119,62 @@ func MySQLInstallDB(mysqlDir string, dataDir string) error {
 	return err
 }
 
-func MySQLInstallReplication(mysqlDir string, installPath string, port int) {
-	masterDir := installPath + "/master"
-	slaveDir := installPath + "/slave"
-	masterDataDir := masterDir + "/data"
-	slaveDataDir := slaveDir + "/data"
-	masterCnf := masterDir + "/my.sandbox.cnf"
-	slaveCnf := slaveDir + "/my.sandbox.cnf"
+func MySQLInstallReplication(mysqlDir string, partation1InstallPath string, partation2InstallPath string, port int) {
+	/** partation1 MySQL path init **/
+	partation1MasterDir := partation1InstallPath + "/master"
+	partation1SlaveDir := partation1InstallPath + "/slave"
 
-	/** install master */
-	os.MkdirAll(masterDataDir, 0777)
-	err := MySQLInstallDB(mysqlDir, masterDataDir)
-	check(err)
-	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, masterDir, masterCnf)
-	check(err)
+	partation1MasterDataDir := partation1MasterDir + "/data"
+	partation1SlaveDataDir := partation1SlaveDir + "/data"
 
-	/** install slave */
-	os.MkdirAll(slaveDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, slaveDataDir)
-	check(err)
-	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, slaveDir, slaveCnf)
-	check(err)
+	partation1MasterCnf := partation1MasterDir + "/my.sandbox.cnf"
+	partation1SlaveCnf := partation1SlaveDir + "/my.sandbox.cnf"
+
+	/** partation2 MySQL path init **/
+	partation2MasterDir := partation2InstallPath + "/master"
+	partation2SlaveDir := partation2InstallPath + "/slave"
+
+	partation2MasterDataDir := partation2MasterDir + "/data"
+	partation2SlaveDataDir := partation2SlaveDir + "/data"
+
+	partation2MasterCnf := partation2MasterDir + "/my.sandbox.cnf"
+	partation2SlaveCnf := partation2SlaveDir + "/my.sandbox.cnf"
+
+	/** install partation1 master */
+	os.MkdirAll(partation1MasterDataDir, 0777)
+	err := MySQLInstallDB(mysqlDir, partation1MasterDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation1MasterDir, partation1MasterCnf)
+	Check(err)
+
+	/** install partation1 slave */
+	os.MkdirAll(partation1SlaveDataDir, 0777)
+	err = MySQLInstallDB(mysqlDir, partation1SlaveDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation1SlaveDir, partation1SlaveCnf)
+	Check(err)
+
+	/** install partation2 master */
+	os.MkdirAll(partation2MasterDataDir, 0777)
+	err = MySQLInstallDB(mysqlDir, partation2MasterDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, partation2MasterDir, partation2MasterCnf)
+	Check(err)
+
+	/** install partation2 slave */
+	os.MkdirAll(partation2SlaveDataDir, 0777)
+	err = MySQLInstallDB(mysqlDir, partation2SlaveDataDir)
+	Check(err)
+	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, partation2SlaveDir, partation2SlaveCnf)
+	Check(err)
 }
 
-func InitGrantScripts(scripts map[string]string, options map[string]string) {
+func InitGrantScripts(scripts map[string]string) {
+	/** init grants options **/
+	options := make(map[string]string)
+	InitGrantOptions(options)
+
+	/** get grants options **/
 	dbUser := options["dbUser"]
 	rwUser := options["rwUser"]
 	roUser := options["roUser"]
@@ -150,6 +182,8 @@ func InitGrantScripts(scripts map[string]string, options map[string]string) {
 	dbPassword := options["dbPassword"]
 	replUser := options["replUser"]
 	replPassword := options["replPassword"]
+
+	/** init grants code **/
 	grantsMySQLFormat := `use mysql;
 set password=password(%s);
 grant all on *.* to %s@'%s' identified by '%s';
@@ -170,6 +204,8 @@ create database if not exists test;
 `
 	grantsMysql := fmt.Sprintf(grantsMySQLFormat, dbPassword, dbUser, remoteAccess, dbPassword, dbUser, dbPassword, rwUser, dbPassword, rwUser, remoteAccess, dbPassword, roUser, remoteAccess, dbPassword, roUser, dbPassword, replUser, remoteAccess, replPassword)
 	scripts["grants.mysql"] = grantsMysql
+
+	/** init grants576 code **/
 	grants576MySQLFormat := `use mysql;
 set password='%s';
 -- delete from tables_priv;
@@ -207,18 +243,35 @@ create schema if not exists test;
 	scripts["grants_5_7_6.mysql"] = grants576Mysql
 }
 
-func MySQLInstallGrantFile(installPath string, code string) {
+func MySQLInstallGrantFile(mysqlDirPath string, installPath string) string {
+	/** init grants scripts **/
+	scripts := make(map[string]string)
+	InitGrantScripts(scripts)
+
+	/** judge version **/
+	verP1, verP2, verP3, err := GetMySQLVersion(mysqlDirPath)
+	Check(err)
+
+	var code string
+
+	if (verP1*256*256 + verP2*256 + verP3) >= (5*256*256 + 7*256 + 6) {
+		code = scripts["grants_5_7_6.mysql"]
+	} else {
+		code = scripts["grants.mysql"]
+	}
+
 	grantsFilePath := installPath + "/mysql.grants"
 
 	grantsCode := []byte(code)
 
 	grantsFile, err := os.Create(grantsFilePath)
-	check(err)
+	Check(err)
 
 	_, err = grantsFile.Write(grantsCode)
-	check(err)
+	Check(err)
 
 	grantsFile.Close()
+	return grantsFilePath
 }
 
 func MySQLInstallRepGrantFile(grantsFilePath string, dsn string) {
@@ -238,8 +291,8 @@ func InitGrantOptions(options map[string]string) {
 
 func RunOperat(dsn string, stmt string) {
 	db, err := sql.Open("mysql", "dsn")
-	check(err)
+	Check(err)
 	_, exec_err := db.Exec(stmt)
-	check(exec_err)
+	Check(exec_err)
 	db.Close()
 }

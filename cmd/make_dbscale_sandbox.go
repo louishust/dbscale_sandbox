@@ -33,13 +33,6 @@ func exists(path string) (bool, error) {
 	return true, err
 }
 
-func check(e error) {
-	if e != nil {
-		fmt.Println(e)
-		panic(e)
-	}
-}
-
 func main() {
 	init_options()
 	flag.Parse()
@@ -62,23 +55,8 @@ func main() {
 	os.MkdirAll(rep1Dir, 0777)
 	os.MkdirAll(rep2Dir, 0777)
 
-	utils.MySQLInstallReplication(*mysqlDirPath, rep1Dir, start_port)
-	utils.MySQLInstallReplication(*mysqlDirPath, rep2Dir, start_port+2)
+	utils.MySQLInstallReplication(*mysqlDirPath, rep1Dir, rep2Dir, start_port)
 
-	options := make(map[string]string)
-	utils.InitGrantOptions(options)
-
-	scripts := make(map[string]string)
-	utils.InitGrantScripts(scripts, options)
-
-	verP1, verP2, verP3, err := utils.GetMySQLVersion(*mysqlDirPath)
-	check(err)
-
-	if (verP1*256*256 + verP2*256 + verP3) >= (5*256*256 + 7*256 + 6) {
-		grantsCode := scripts["grants_5_7_6.mysql"]
-		utils.MySQLInstallGrantFile(*installPath, grantsCode)
-	} else {
-		grantsCode := scripts["grants.mysql"]
-		utils.MySQLInstallGrantFile(*installPath, grantsCode)
-	}
+	grantsFilePath := utils.MySQLInstallGrantFile(*mysqlDirPath, *installPath)
+	fmt.Println(grantsFilePath)
 }
