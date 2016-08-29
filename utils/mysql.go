@@ -2,7 +2,9 @@ package utils
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"os"
 	"os/exec"
 	"strconv"
@@ -43,7 +45,7 @@ func FindMySQLInstallDir() (string, error) {
 	return strings.TrimSuffix(out.String(), "\n"), nil
 }
 
-func check(e error) {
+func Check(e error) {
 	if e != nil {
 		fmt.Println(e)
 		panic(e)
@@ -51,7 +53,7 @@ func check(e error) {
 }
 
 func InitMySQLConfigFile(port int, user string, password string,
-	mysqlDir string, sandbox string, filename string) error {
+	mysqlDir string, sandbox string, filename string, retChan chan error) {
 	format := `
 [mysql]
 prompt='mysql [\h] {\u} (\d) > '
@@ -61,12 +63,12 @@ prompt='mysql [\h] {\u} (\d) > '
 user               = %s
 password           = %s
 port               = %d
-socket             = /tmp/mysql_sandbox%d.sock
+socket             = %s/mysql_sandbox%d.sock
 
 [mysqld]
 user               = %s
 port               = %d
-socket             = /tmp/mysql_sandbox%d.sock
+socket             = %s/mysql_sandbox%d.sock
 basedir            = %s
 datadir            = %s/data
 tmpdir             = %s/tmp
@@ -75,17 +77,17 @@ pid-file           = %s/data/mysql_sandbox%d.pid
 bind-address       = 127.0.0.1
 `
 
-	context := fmt.Sprintf(format, user, password, port, port, user, port, port, mysqlDir, sandbox, sandbox, sandbox, port)
+	context := fmt.Sprintf(format, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port)
 	f, err := os.Create(filename)
 	defer f.Close()
 
-	check(err)
+	Check(err)
 	_, err = f.WriteString(context)
-	check(err)
+	Check(err)
 	err = f.Sync()
-	check(err)
+	Check(err)
 
-	return err
+	retChan <- err
 }
 
 func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
@@ -106,7 +108,7 @@ func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
 	}
 }
 
-func MySQLInstallDB(mysqlDir string, dataDir string) error {
+func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
 	var mysql_install_db = mysqlDir + "/scripts/mysql_install_db"
 	var option1 = "--basedir=" + mysqlDir
 	var option2 = "--datadir=" + dataDir
@@ -114,28 +116,278 @@ func MySQLInstallDB(mysqlDir string, dataDir string) error {
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	var err = cmd.Run()
-	return err
+	retChan <- err
 }
 
-func MySQLInstallReplication(mysqlDir string, installPath string, port int) {
-	masterDir := installPath + "/master"
-	slaveDir := installPath + "/slave"
-	masterDataDir := masterDir + "/data"
-	slaveDataDir := slaveDir + "/data"
-	masterCnf := masterDir + "/my.sandbox.cnf"
-	slaveCnf := slaveDir + "/my.sandbox.cnf"
+func MySQLInstallReplication(mysqlDir string, instanceDir2Port map[string]int) {
+	retChan := make(chan error, 12)
 
-	/** install master */
-	os.MkdirAll(masterDataDir, 0777)
-	err := MySQLInstallDB(mysqlDir, masterDataDir)
-	check(err)
-	err = InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, masterDir, masterCnf)
-	check(err)
+	/*** Install MySQL and config ***/
+	for dir, port := range instanceDir2Port {
+		dataDir := dir + "/data"
+		tmpDir := dir + "/tmp"
+		cnfPath := dir + "/my.sandbox.cnf"
+		os.MkdirAll(dataDir, 0777)
+		os.MkdirAll(tmpDir, 0777)
+		go MySQLInstallDB(mysqlDir, dataDir, retChan)
+		go InitMySQLConfigFile(port, "dbscale", "dbscale", mysqlDir, dir, cnfPath, retChan)
+	}
 
-	/** install slave */
-	os.MkdirAll(slaveDataDir, 0777)
-	err = MySQLInstallDB(mysqlDir, slaveDataDir)
-	check(err)
-	err = InitMySQLConfigFile(port+1, "dbscale", "dbscale", mysqlDir, slaveDir, slaveCnf)
-	check(err)
+	/** check return channel **/
+	for i := 0; i < 12; i++ {
+		err := <-retChan
+		Check(err)
+	}
+}
+
+func InitMySQLStartScript(mysqlDirPath string, instanceDir string, port int) string {
+	startScript := `#!/bin/bash
+BASEDIR='%s'
+export LD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$LD_LIBRARY_PATH
+export DYLD_LIBRARY_PATH=$BASEDIR_/lib:$BASEDIR/lib/mysql:$DYLD_LIBRARY_PATH
+MYSQLD_SAFE="$BASEDIR/bin/mysqld_safe"
+SBDIR="%s"
+PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
+
+if [ ! -f $MYSQLD_SAFE ]
+then
+    echo "mysqld_safe not found in $BASEDIR/bin/"
+    exit 1
+fi
+MYSQLD_SAFE_OK=%ssh -n $MYSQLD_SAFE 2>&1%s
+if [ "$MYSQLD_SAFE_OK" != "" ]
+then
+    echo "$MYSQLD_SAFE has errors"
+    echo "((( $MYSQLD_SAFE_OK )))"
+    exit 1
+fi
+
+is_running()
+{
+    if [ -f $PIDFILE ]
+    then
+        MYPID=$(cat $PIDFILE)
+        ps -p $MYPID | grep $MYPID
+    fi
+}
+
+TIMEOUT=180
+if [ -n "$(is_running)" ]
+then
+    echo "sandbox server already started (found pid file $PIDFILE)"
+else
+    if [ -f $PIDFILE ]
+    then
+        # Server is not running. Removing stale pid-file
+        rm -f $PIDFILE
+    fi
+    CURDIR=%spwd%s
+    cd $BASEDIR
+    $MYSQLD_SAFE --defaults-file=$SBDIR/my.sandbox.cnf $@ > /dev/null 2>&1 &
+    cd $CURDIR
+    ATTEMPTS=1
+    while [ ! -f $PIDFILE ] 
+    do
+        ATTEMPTS=$(( $ATTEMPTS + 1 ))
+        echo -n "."
+        if [ $ATTEMPTS = $TIMEOUT ]
+        then
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ -f $PIDFILE ]
+then
+    echo " sandbox server started"
+    #if [ -f $SBDIR/needs_reload ]
+    #then
+    #    if [ -f $SBDIR/rescue_mysql_dump.sql ]
+    #    then
+    #        $SBDIR/use mysql < $SBDIR/rescue_mysql_dump.sql
+    #    fi
+    #    rm $SBDIR/needs_reload
+    #fi
+else
+    echo " sandbox server not started yet"
+    exit 1
+fi
+`
+	backQuotes := "`"
+	startScript = fmt.Sprintf(startScript, mysqlDirPath, instanceDir, port, backQuotes, backQuotes, backQuotes, backQuotes)
+	return startScript
+}
+
+func InitStartAllScript(installPath string) string {
+	StartAllScript := `#!/bin/bash
+instanceDir=%sfind %s -maxdepth 2 -mindepth 2 -type d%s
+for i in $instanceDir;
+do
+    $i/start $@
+done
+`
+	backQuotes := "`"
+	StartAllScript = fmt.Sprintf(StartAllScript, backQuotes, installPath, backQuotes)
+	return StartAllScript
+}
+
+func InstallMySQLStartScripts(mysqlDirPath string, installPath string, instanceDir2Port map[string]int) {
+	/*** Install startscripts ***/
+	for instanceDir, port := range instanceDir2Port {
+		startScript := []byte(InitMySQLStartScript(mysqlDirPath, instanceDir, port))
+		startFilePath := instanceDir + "/start"
+		startFile, err := os.Create(startFilePath)
+		Check(err)
+		_, err = startFile.Write(startScript)
+		Check(err)
+		startFile.Close()
+		os.Chmod(startFilePath, 0744)
+	}
+
+	/*** Install startallscript ***/
+	startAllScript := []byte(InitStartAllScript(installPath))
+	startAllFilePath := installPath + "/startall"
+	startAllFile, err := os.Create(startAllFilePath)
+	Check(err)
+	_, err = startAllFile.Write(startAllScript)
+	Check(err)
+	startAllFile.Close()
+	os.Chmod(startAllFilePath, 0744)
+}
+
+func StartMySQL(installPath string) {
+	cmd := exec.Command(installPath + "/startall")
+	cmd.Dir = installPath
+	err := cmd.Run()
+	Check(err)
+}
+
+func InitGrantScripts(scripts map[string]string) {
+	/** init grants options **/
+	options := make(map[string]string)
+	InitGrantOptions(options)
+
+	/** get grants options **/
+	dbUser := options["dbUser"]
+	rwUser := options["rwUser"]
+	roUser := options["roUser"]
+	remoteAccess := options["remoteAccess"]
+	dbPassword := options["dbPassword"]
+	replUser := options["replUser"]
+	replPassword := options["replPassword"]
+
+	/** init grants code **/
+	grantsMySQLFormat := `set password=password('%s');
+grant all on *.* to %s@'%s' identified by '%s';
+grant all on *.* to %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER, SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE on *.* to %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER, SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE on *.* to %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'localhost' identified by '%s';
+grant REPLICATION SLAVE on *.* to %s@'%s' identified by '%s';
+delete from user where password='';
+delete from db where user='';
+flush privileges;
+create database if not exists test;`
+	grantsMysql := fmt.Sprintf(grantsMySQLFormat, dbPassword, dbUser, remoteAccess, dbPassword, dbUser, dbPassword, rwUser, dbPassword, rwUser, remoteAccess, dbPassword, roUser, remoteAccess, dbPassword, roUser, dbPassword, replUser, remoteAccess, replPassword)
+	scripts["grants.mysql"] = grantsMysql
+
+	/** init grants576 code **/
+	grants576MySQLFormat := `use mysql;
+set password='%s';
+-- delete from tables_priv;
+-- delete from columns_priv;
+-- delete from db;
+delete from user where user not in ('root', 'mysql.sys', 'mysqlxsys');
+
+flush privileges;
+
+create user %s@'%s' identified by '%s';
+grant all on *.* to %s@'%s' ;
+
+create user %s@'localhost' identified by '%s';
+grant all on *.* to %s@'localhost';
+
+create user %s@'localhost' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+     SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+     on *.* to %s@'localhost';
+
+create user %s@'%s' identified by '%s';
+grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER,
+    SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE 
+    on *.* to %s@'%s';
+     
+create user %s@'%s' identified by '%s';
+create user %s@'localhost' identified by '%s';
+create user %s@'%s' identified by '%s';
+grant SELECT,EXECUTE on *.* to %s@'%s';
+grant SELECT,EXECUTE on *.* to %s@'localhost';
+grant REPLICATION SLAVE on *.* to %s@'%s';
+create schema if not exists test;
+`
+	grants576Mysql := fmt.Sprintf(grants576MySQLFormat, dbPassword, dbUser, remoteAccess, dbPassword, dbUser, remoteAccess, dbUser, dbPassword, dbUser, rwUser, dbPassword, rwUser, rwUser, remoteAccess, dbPassword, rwUser, remoteAccess, roUser, remoteAccess, dbPassword, roUser, dbPassword, replUser, remoteAccess, replPassword, roUser, remoteAccess, roUser, replUser, remoteAccess)
+	scripts["grants_5_7_6.mysql"] = grants576Mysql
+}
+
+func MySQLInstallGrantFile(mysqlDirPath string, installPath string) string {
+	/*** init grants scripts ***/
+	scripts := make(map[string]string)
+	InitGrantScripts(scripts)
+
+	/*** judge version ***/
+	verP1, verP2, verP3, err := GetMySQLVersion(mysqlDirPath)
+	Check(err)
+
+	/*** install grants file ***/
+	var code string
+
+	if (verP1*256*256 + verP2*256 + verP3) >= (5*256*256 + 7*256 + 6) {
+		code = scripts["grants_5_7_6.mysql"]
+	} else {
+		code = scripts["grants.mysql"]
+	}
+
+	grantsFilePath := installPath + "/mysql.grants"
+
+	grantsCode := []byte(code)
+
+	grantsFile, err := os.Create(grantsFilePath)
+	Check(err)
+
+	_, err = grantsFile.Write(grantsCode)
+	Check(err)
+
+	grantsFile.Close()
+	return code
+}
+
+func MySQLInstallRepGrantFile(grantsCode string, instanceDir2Port map[string]int) {
+	for dir, port := range instanceDir2Port {
+		socketPath := fmt.Sprintf("%s/mysql_sandbox%d.sock", dir, port)
+		dsn := "root:@unix(" + socketPath + ")/mysql"
+		stmts := strings.Split(grantsCode, "\n")
+		RunOperat(dsn, stmts)
+	}
+}
+
+func InitGrantOptions(options map[string]string) {
+	options["dbUser"] = "dbscale"
+	options["dbPassword"] = "dbscale"
+	options["remoteAccess"] = "127.%"
+	options["roUser"] = "dbscale_ro"
+	options["rwUser"] = "dbscale_rw"
+	options["replUser"] = "rdbscale"
+	options["replPassword"] = "rdbscale"
+}
+
+func RunOperat(dsn string, stmts []string) {
+	db, err := sql.Open("mysql", dsn)
+	Check(err)
+	for _, each_stmt := range stmts {
+		_, err = db.Exec(each_stmt)
+		Check(err)
+	}
+	db.Close()
 }
