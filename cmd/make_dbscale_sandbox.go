@@ -9,17 +9,24 @@ import (
 )
 
 var (
-	installPath  *string
-	mysqlDirPath *string
-	start_port   = 3210
+	installPath        *string
+	mysqlDirPath       *string
+	mysqlStartPort     *int
+	dbscalePackagePath *string
+	dbscalePort        *int
 )
 
 func init_options() {
 	var curUser, _ = user.Current()
 	var defaultInstallPath = curUser.HomeDir + "/sandboxes"
 	var defaultMySQLDirPath, _ = utils.FindMySQLInstallDir()
+	var defaultStartPort = 3210
+	var defaultDBSalePort = 13001
 	installPath = flag.String("install-path", defaultInstallPath, "path to install")
 	mysqlDirPath = flag.String("mysql-dir", defaultMySQLDirPath, "mysql installed directory")
+	mysqlStartPort = flag.Int("mysql-start-port", defaultStartPort, "mysql start port")
+	dbscalePackagePath = flag.String("dbscale-package-path", "", "DBScale package path")
+	dbscalePort = flag.Int("dbscale-port", defaultDBSalePort, "DBScale port")
 }
 
 func exists(path string) (bool, error) {
@@ -41,18 +48,22 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	if *dbscalePackagePath == "" {
+		fmt.Println("dbscale-package-path must be declare!")
+		os.Exit(1)
+	}
 
 	rep1Dir := *installPath + "/rep_mysql_sandbox1"
 	rep2Dir := *installPath + "/rep_mysql_sandbox2"
 	authDir := *installPath + "/auth_mysql_sandbox"
 
 	instanceDir2Port := map[string]int{
-		rep1Dir + "/master": start_port,
-		rep1Dir + "/slave":  start_port + 1,
-		rep2Dir + "/master": start_port + 2,
-		rep2Dir + "/slave":  start_port + 3,
-		authDir + "/master": start_port + 4,
-		authDir + "/slave":  start_port + 5}
+		authDir + "/master": *mysqlStartPort,
+		authDir + "/slave":  *mysqlStartPort + 1,
+		rep1Dir + "/master": *mysqlStartPort + 2,
+		rep1Dir + "/slave":  *mysqlStartPort + 3,
+		rep2Dir + "/master": *mysqlStartPort + 4,
+		rep2Dir + "/slave":  *mysqlStartPort + 5}
 
 	ret1, _ := exists(rep1Dir)
 	ret2, _ := exists(rep2Dir)
@@ -72,6 +83,14 @@ func main() {
 	utils.InstallMySQLStartScripts(*mysqlDirPath, *installPath, instanceDir2Port)
 	utils.StartMySQL(*installPath)
 
-	grantsCode := utils.MySQLInstallGrantFile(*mysqlDirPath, *installPath)
+	/** init grants options **/
+	options := make(map[string]string)
+	utils.InitGrantOptions(options)
+
+	grantsCode := utils.MySQLInstallGrantFile(*mysqlDirPath, *installPath, options)
 	utils.MySQLInstallRepGrantFile(grantsCode, instanceDir2Port)
+
+	utils.InstallDBScale(*dbscalePackagePath, *installPath)
+	utils.InstallDBScaleConfig(options["dbUser"], options["dbPassword"], *installPath, *mysqlStartPort, *dbscalePort)
+	utils.StartDBScale(*installPath)
 }
