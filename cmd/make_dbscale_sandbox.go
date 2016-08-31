@@ -89,9 +89,9 @@ func main() {
 	os.MkdirAll(rep2Dir, 0777)
 	os.MkdirAll(authDir, 0777)
 
-	utils.MySQLInstallReplication(*mysqlDirPath, *mysqlPackagePath, instanceDir2Port)
+	utils.MySQLInstallReplication(*mysqlDirPath, *installPath, *mysqlPackagePath, instanceDir2Port)
 
-	utils.InstallMySQLStartScripts(*mysqlDirPath, *installPath, instanceDir2Port)
+	utils.InstallMySQLScripts(*mysqlDirPath, *installPath, instanceDir2Port)
 	utils.StartMySQL(*installPath)
 
 	/** init grants options **/
@@ -104,4 +104,9 @@ func main() {
 	utils.InstallDBScale(*dbscalePackagePath, *installPath)
 	utils.InstallDBScaleConfig(options["dbUser"], options["dbPassword"], *installPath, *mysqlStartPort, *dbscalePort)
 	utils.StartDBScale(*installPath)
+
+	utils.InstallStartAndStopDBscaleScripts(*installPath)
+	utils.InstallStartAndStopDBscaleScripts(*installPath)
+
+	utils.InstallScripts4All(*installPath)
 }

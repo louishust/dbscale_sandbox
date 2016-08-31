@@ -7,6 +7,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"os"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -127,10 +128,14 @@ func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
 	retChan <- err
 }
 
-func MySQLInstallReplication(mysqlDir string, mysqlPackagePath string, instanceDir2Port map[string]int) {
+func MySQLInstallReplication(mysqlDir string, installPath string, mysqlPackagePath string, instanceDir2Port map[string]int) {
 	/*** judge weather need to decompress MySQL ***/
 	if mysqlPackagePath != "" {
-		Decompress(mysqlPackagePath, mysqlDir)
+		Decompress(mysqlPackagePath, installPath)
+		mysqlDecompressPath := strings.Split(path.Base(mysqlPackagePath), ".tar")[0]
+		cmd := exec.Command("ln", "-s", mysqlDecompressPath, installPath+"/mysql")
+		err := cmd.Run()
+		Check(err)
 	}
 
 	retChan := make(chan error, 12)
@@ -153,7 +158,7 @@ func MySQLInstallReplication(mysqlDir string, mysqlPackagePath string, instanceD
 	}
 }
 
-func InitMySQLStartScript(mysqlDirPath string, instanceDir string, port int) string {
+func InitMySQLScripts(mysqlDirPath string, instanceDir string, port int, scriptsDict map[string]string) {
 	startScript := `#!/bin/bash
 BASEDIR='%s'
 export LD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$LD_LIBRARY_PATH
@@ -228,49 +233,143 @@ else
 fi
 `
 	backQuotes := "`"
-	startScript = fmt.Sprintf(startScript, mysqlDirPath, instanceDir, port, backQuotes, backQuotes, backQuotes, backQuotes)
-	return startScript
+	scriptsDict["start"] = fmt.Sprintf(startScript, mysqlDirPath, instanceDir, port, backQuotes, backQuotes, backQuotes, backQuotes)
+	stopScript := `#!/bin/bash
+BASEDIR="%s"
+SBDIR="%s"
+export LD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$LD_LIBRARY_PATH
+export DYLD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$DYLD_LIBRARY_PATH
+MYSQL_ADMIN="$BASEDIR/bin/mysqladmin"
+PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
+
+is_running()
+{
+    if [ -f $PIDFILE ]
+    then
+        MYPID=$(cat $PIDFILE)
+        ps -p $MYPID | grep $MYPID
+    fi
 }
 
-func InitStartAllScript(installPath string) string {
-	StartAllScript := `#!/bin/bash
-instanceDir=%sfind %s -maxdepth 2 -mindepth 2 -type d%s
-for i in $instanceDir;
+if [ -n "$(is_running)" ]
+then
+    $MYSQL_ADMIN --defaults-file=$SBDIR/my.sandbox.cnf $MYCLIENT_OPTIONS shutdown
+    sleep 1
+else
+    if [ -f $PIDFILE ]
+    then
+        rm -f $PIDFILE
+    fi
+fi
+
+if [ -n "$(is_running)" ]
+then
+    # use the send_kill script if the server is not responsive
+    $SBDIR/send_kill
+fi
+`
+	scriptsDict["stop"] = fmt.Sprintf(stopScript, mysqlDirPath, instanceDir, port)
+	sendKillScript := `#!/bin/bash
+SBDIR="%s"
+PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
+TIMEOUT=30
+
+is_running()
+{
+    if [ -f $PIDFILE ]
+    then
+        MYPID=$(cat $PIDFILE)
+        ps -p $MYPID | grep $MYPID
+    fi
+}
+
+
+if [ -n "$(is_running)" ]
+then
+    MYPID=%scat $PIDFILE%s
+    echo "Attempting normal termination --- kill -15 $MYPID"
+    kill -15 $MYPID
+    # give it a chance to exit peacefully
+    ATTEMPTS=1
+    while [ -f $PIDFILE ]
+    do
+        ATTEMPTS=$(( $ATTEMPTS + 1 ))
+        if [ $ATTEMPTS = $TIMEOUT ]
+        then
+            break
+        fi
+        sleep 1
+    done
+    if [ -f $PIDFILE ]
+    then
+        echo "SERVER UNRESPONSIVE --- kill -9 $MYPID"
+        kill -9 $MYPID
+        rm -f $PIDFILE
+    fi
+else
+    # server not running - removing stale pid-file
+    if [ -f $PIDFILE ]
+    then
+        rm -f $PIDFILE
+    fi
+fi
+`
+	scriptsDict["send_kill"] = fmt.Sprintf(sendKillScript, instanceDir, port, backQuotes, backQuotes)
+}
+
+func InitMySQLScript4All(installPath string, scriptsDict map[string]string) {
+	startAllMySQLScript := `#!/bin/bash
+instanceScript=%sfind %s -maxdepth 3 -mindepth 2 -type f -name start%s
+for i in $instanceScript;
 do
-    $i/start $@
+    $i $@
 done
 `
 	backQuotes := "`"
-	StartAllScript = fmt.Sprintf(StartAllScript, backQuotes, installPath, backQuotes)
-	return StartAllScript
+	scriptsDict["startallmysql"] = fmt.Sprintf(startAllMySQLScript, backQuotes, installPath, backQuotes)
+	stopAllMySQLScript := `#!/bin/bash
+instanceScript=%sfind %s -maxdepth 3 -mindepth 2 -type f -name stop%s
+for i in $instanceScript;
+do
+    $i $@
+done
+`
+	scriptsDict["stopallmysql"] = fmt.Sprintf(stopAllMySQLScript, backQuotes, installPath, backQuotes)
 }
 
-func InstallMySQLStartScripts(mysqlDirPath string, installPath string, instanceDir2Port map[string]int) {
+func InstallMySQLScripts(mysqlDirPath string, installPath string, instanceDir2Port map[string]int) {
+	mysqlScriptsDict := make(map[string]string)
+	mysqlScript4AllDict := make(map[string]string)
+
 	/*** Install startscripts ***/
 	for instanceDir, port := range instanceDir2Port {
-		startScript := []byte(InitMySQLStartScript(mysqlDirPath, instanceDir, port))
-		startFilePath := instanceDir + "/start"
-		startFile, err := os.Create(startFilePath)
-		Check(err)
-		_, err = startFile.Write(startScript)
-		Check(err)
-		startFile.Close()
-		os.Chmod(startFilePath, 0744)
+		InitMySQLScripts(mysqlDirPath, instanceDir, port, mysqlScriptsDict)
+		for scriptName, script := range mysqlScriptsDict {
+			scriptFilePath := instanceDir + "/" + scriptName
+			scriptFile, err := os.Create(scriptFilePath)
+			Check(err)
+			_, err = scriptFile.Write([]byte(script))
+			Check(err)
+			scriptFile.Chmod(0744)
+			scriptFile.Close()
+		}
 	}
 
-	/*** Install startallscript ***/
-	startAllScript := []byte(InitStartAllScript(installPath))
-	startAllFilePath := installPath + "/startall"
-	startAllFile, err := os.Create(startAllFilePath)
-	Check(err)
-	_, err = startAllFile.Write(startAllScript)
-	Check(err)
-	startAllFile.Close()
-	os.Chmod(startAllFilePath, 0744)
+	/*** Install scripts4all ***/
+	InitMySQLScript4All(installPath, mysqlScript4AllDict)
+	for scriptName, script := range mysqlScript4AllDict {
+		scriptFilePath := installPath + "/" + scriptName
+		scriptFile, err := os.Create(scriptFilePath)
+		Check(err)
+		_, err = scriptFile.Write([]byte(script))
+		Check(err)
+		scriptFile.Chmod(0744)
+		scriptFile.Close()
+	}
 }
 
 func StartMySQL(installPath string) {
-	cmd := exec.Command(installPath + "/startall")
+	cmd := exec.Command(installPath + "/startallmysql")
 	cmd.Dir = installPath
 	err := cmd.Run()
 	Check(err)
