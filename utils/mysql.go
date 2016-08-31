@@ -127,7 +127,12 @@ func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
 	retChan <- err
 }
 
-func MySQLInstallReplication(mysqlDir string, instanceDir2Port map[string]int) {
+func MySQLInstallReplication(mysqlDir string, mysqlPackagePath string, instanceDir2Port map[string]int) {
+	/*** judge weather need to decompress MySQL ***/
+	if mysqlPackagePath != "" {
+		Decompress(mysqlPackagePath, mysqlDir)
+	}
+
 	retChan := make(chan error, 12)
 
 	/*** Install MySQL and config ***/
