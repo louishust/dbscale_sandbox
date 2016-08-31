@@ -11,6 +11,7 @@ import (
 var (
 	installPath        *string
 	mysqlDirPath       *string
+	mysqlPackagePath   *string
 	mysqlStartPort     *int
 	dbscalePackagePath *string
 	dbscalePort        *int
@@ -19,11 +20,11 @@ var (
 func init_options() {
 	var curUser, _ = user.Current()
 	var defaultInstallPath = curUser.HomeDir + "/sandboxes"
-	var defaultMySQLDirPath, _ = utils.FindMySQLInstallDir()
 	var defaultStartPort = 3210
 	var defaultDBSalePort = 13001
 	installPath = flag.String("install-path", defaultInstallPath, "path to install")
-	mysqlDirPath = flag.String("mysql-dir", defaultMySQLDirPath, "mysql installed directory")
+	mysqlDirPath = flag.String("mysql-dir", "", "mysql installed directory, if not declare, sandbox will auto find")
+	mysqlPackagePath = flag.String("mysql-package-path", "", "mysql package path")
 	mysqlStartPort = flag.Int("mysql-start-port", defaultStartPort, "mysql start port")
 	dbscalePackagePath = flag.String("dbscale-package-path", "", "DBScale package path")
 	dbscalePort = flag.Int("dbscale-port", defaultDBSalePort, "DBScale port")
@@ -48,9 +49,19 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
 	if *dbscalePackagePath == "" {
 		fmt.Println("dbscale-package-path must be declare!")
 		os.Exit(1)
+	}
+
+	if *mysqlPackagePath != "" && *mysqlDirPath != "" {
+		*mysqlDirPath = *installPath + "/mysql"
+		fmt.Println("'mysql-package-path' higher priority than 'mysql-dir'\nnew 'mysql-dir' is %s.", *mysqlDirPath)
+	} else if *mysqlPackagePath != "" {
+		*mysqlDirPath = *installPath + "/mysql"
+	} else {
+		*mysqlDirPath, _ = utils.FindMySQLInstallDir()
 	}
 
 	rep1Dir := *installPath + "/rep_mysql_sandbox1"
@@ -78,7 +89,7 @@ func main() {
 	os.MkdirAll(rep2Dir, 0777)
 	os.MkdirAll(authDir, 0777)
 
-	utils.MySQLInstallReplication(*mysqlDirPath, instanceDir2Port)
+	utils.MySQLInstallReplication(*mysqlDirPath, *mysqlPackagePath, instanceDir2Port)
 
 	utils.InstallMySQLStartScripts(*mysqlDirPath, *installPath, instanceDir2Port)
 	utils.StartMySQL(*installPath)
