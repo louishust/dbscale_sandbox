@@ -229,7 +229,7 @@ partition = partition2
 
 [table test.part]
 type = partition
-pattern=test.*
+pattern=.*
 partition-scheme = test
 partition-key = id 
 `
