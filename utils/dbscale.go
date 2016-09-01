@@ -243,3 +243,32 @@ func StartDBScale(installPath string) {
 	err := cmd.Run()
 	Check(err)
 }
+
+func InitStopAndStartDBScaleScripts(installPath string, startAndStopScript map[string]string) {
+	startAndStopScript["startScript"] = installPath + "/dbscale/dbscale-service.sh start"
+	startAndStopScript["stopScript"] = installPath + "/dbscale/dbscale-service.sh stop"
+}
+
+func InstallStartAndStopDBscaleScripts(installPath string) {
+	/*** init stop&start scripts ***/
+	startAndStopScript := make(map[string]string)
+	InitStopAndStartDBScaleScripts(installPath, startAndStopScript)
+
+	/*** install start scripts ***/
+	startScriptPath := installPath + "/dbscale-start.sh"
+	startf, err := os.Create(startScriptPath)
+	Check(err)
+	startf.Write([]byte(startAndStopScript["startScript"]))
+	err = startf.Chmod(0755)
+	Check(err)
+	startf.Close()
+
+	/*** install stop scripts ***/
+	stopScriptPath := installPath + "/dbscale-stop.sh"
+	stopf, err := os.Create(stopScriptPath)
+	Check(err)
+	stopf.Write([]byte(startAndStopScript["stopScript"]))
+	err = stopf.Chmod(0755)
+	Check(err)
+	stopf.Close()
+}
