@@ -54,8 +54,7 @@ func Check(e error) {
 
 func InitMySQLConfigFile(port int, user string, password string,
 	mysqlDir string, sandbox string, filename string, retChan chan error) {
-	format := `
-[mysql]
+	format := `[mysql]
 prompt='mysql [\h] {\u} (\d) > '
 #
 
@@ -72,12 +71,21 @@ socket             = %s/mysql_sandbox%d.sock
 basedir            = %s
 datadir            = %s/data
 tmpdir             = %s/tmp
-lower_case_table_names = 0
+lower_case_table_names = 1
 pid-file           = %s/data/mysql_sandbox%d.pid
 bind-address       = 127.0.0.1
+gtid_mode          = on
+enforce-gtid-consistency = 1
+net_write_timeout=1800
+net_read_timeout=1800
+max_allowed_packet=16777216
+skip_name_resolve=1
+log-bin=bin
+log-slave-updates
+server-id          = %d
 `
 
-	context := fmt.Sprintf(format, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port)
+	context := fmt.Sprintf(format, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port, port)
 	f, err := os.Create(filename)
 	defer f.Close()
 
@@ -263,11 +271,7 @@ func StartMySQL(installPath string) {
 	Check(err)
 }
 
-func InitGrantScripts(scripts map[string]string) {
-	/** init grants options **/
-	options := make(map[string]string)
-	InitGrantOptions(options)
-
+func InitGrantScripts(scripts map[string]string, options map[string]string) {
 	/** get grants options **/
 	dbUser := options["dbUser"]
 	rwUser := options["rwUser"]
@@ -279,7 +283,7 @@ func InitGrantScripts(scripts map[string]string) {
 
 	/** init grants code **/
 	grantsMySQLFormat := `set password=password('%s');
-grant all on *.* to %s@'%s' identified by '%s';
+grant all on *.* to %s@'%s' identified by '%s' with grant option;
 grant all on *.* to %s@'localhost' identified by '%s';
 grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER, SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE on *.* to %s@'localhost' identified by '%s';
 grant SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,INDEX,ALTER, SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES, EXECUTE on *.* to %s@'%s' identified by '%s';
@@ -304,7 +308,7 @@ delete from user where user not in ('root', 'mysql.sys', 'mysqlxsys');
 flush privileges;
 
 create user %s@'%s' identified by '%s';
-grant all on *.* to %s@'%s' ;
+grant all on *.* to %s@'%s' with grant option;
 
 create user %s@'localhost' identified by '%s';
 grant all on *.* to %s@'localhost';
@@ -331,10 +335,10 @@ create schema if not exists test;
 	scripts["grants_5_7_6.mysql"] = grants576Mysql
 }
 
-func MySQLInstallGrantFile(mysqlDirPath string, installPath string) string {
+func MySQLInstallGrantFile(mysqlDirPath string, installPath string, options map[string]string) string {
 	/*** init grants scripts ***/
 	scripts := make(map[string]string)
-	InitGrantScripts(scripts)
+	InitGrantScripts(scripts, options)
 
 	/*** judge version ***/
 	verP1, verP2, verP3, err := GetMySQLVersion(mysqlDirPath)
