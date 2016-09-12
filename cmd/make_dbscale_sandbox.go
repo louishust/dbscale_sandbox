@@ -89,24 +89,37 @@ func main() {
 	os.MkdirAll(rep2Dir, 0777)
 	os.MkdirAll(authDir, 0777)
 
+	fmt.Println("Installing MySQL.")
 	utils.MySQLInstallReplication(*mysqlDirPath, *installPath, *mysqlPackagePath, instanceDir2Port)
 
+	fmt.Println("Installing MySQL Scripts.")
 	utils.InstallMySQLScripts(*mysqlDirPath, *installPath, instanceDir2Port)
+
+	fmt.Println("Starting MySQL.")
 	utils.StartMySQL(*installPath)
 
 	/** init grants options **/
+	fmt.Println("Granting MySQL.")
 	options := make(map[string]string)
 	utils.InitGrantOptions(options)
 
 	grantsCode := utils.MySQLInstallGrantFile(*mysqlDirPath, *installPath, options)
 	utils.MySQLInstallRepGrantFile(grantsCode, instanceDir2Port)
 
+	fmt.Println("Installing DBScale.")
 	utils.InstallDBScale(*dbscalePackagePath, *installPath)
+	fmt.Println("Initing DBScale Configure.")
 	utils.InstallDBScaleConfig(options["dbUser"], options["dbPassword"], *installPath, *mysqlStartPort, *dbscalePort)
+	fmt.Println("Starting DBScale.")
 	utils.StartDBScale(*installPath)
 
-	utils.InstallStartAndStopDBscaleScripts(*installPath)
-	utils.InstallStartAndStopDBscaleScripts(*installPath)
+	fmt.Println("Installing DBScale Scripts And Sandbox Scripts.")
+	utils.InstallDBscaleScripts(*installPath, *mysqlDirPath, options["dbUser"], options["dbPassword"], *dbscalePort)
 
 	utils.InstallScripts4All(*installPath)
+
+	fmt.Println("Initing Partition Data.")
+	utils.InitPartitionData(*dbscalePort, options["dbUser"], options["dbPassword"])
+
+	fmt.Println("Done!")
 }

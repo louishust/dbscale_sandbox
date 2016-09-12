@@ -84,6 +84,7 @@ skip_name_resolve=1
 log-bin=bin
 log-slave-updates
 server-id          = %d
+skip_slave_start
 `
 
 	context := fmt.Sprintf(format, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port, port)

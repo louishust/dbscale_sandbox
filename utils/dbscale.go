@@ -225,7 +225,15 @@ load-balance-strategy = MASTER-SLAVES
 type=hash
 virtual-weight = 1:1
 partition = partition1
-partition = partition2`
+partition = partition2
+
+[table test.part]
+type = partition
+pattern=.*
+partition-scheme = test
+partition-key = id 
+`
+
 	config = fmt.Sprintf(config, "log/dbscale.log", dbUser, dbPassword, dbscalePort, dbUser, dbPassword, mysqlStartPort, dbUser, dbPassword, mysqlStartPort+1, dbUser, dbPassword, mysqlStartPort+2, dbUser, dbPassword, mysqlStartPort+3, dbUser, dbPassword, dbUser, dbPassword, mysqlStartPort+4, dbUser, dbPassword, mysqlStartPort+5, dbUser, dbPassword, dbUser, dbPassword)
 	return config
 }
@@ -244,31 +252,46 @@ func StartDBScale(installPath string) {
 	Check(err)
 }
 
-func InitStopAndStartDBScaleScripts(installPath string, startAndStopScript map[string]string) {
-	startAndStopScript["startScript"] = installPath + "/dbscale/dbscale-service.sh start"
-	startAndStopScript["stopScript"] = installPath + "/dbscale/dbscale-service.sh stop"
+func InitDBScaleScripts(installPath string, mysqlDirPath string, dbUser string, dbPassword string, dbscalePort int, DBScaleScript map[string]string) {
+	DBScaleScript["dbscale-start.sh"] = installPath + "/dbscale/dbscale-service.sh start"
+	DBScaleScript["dbscale-stop.sh"] = installPath + "/dbscale/dbscale-service.sh stop"
+	loginScript := "%s/bin/mysql -u%s -p%s -h127.0.0.1 -P%d"
+	loginScript = fmt.Sprintf(loginScript, mysqlDirPath, dbUser, dbPassword, dbscalePort)
+	DBScaleScript["loginDBScale"] = loginScript
 }
 
-func InstallStartAndStopDBscaleScripts(installPath string) {
+func InstallDBscaleScripts(installPath string, mysqlDirPath string, dbUser string, dbPassword string, dbscalePort int) {
 	/*** init stop&start scripts ***/
-	startAndStopScript := make(map[string]string)
-	InitStopAndStartDBScaleScripts(installPath, startAndStopScript)
+	DBScaleScript := make(map[string]string)
+	InitDBScaleScripts(installPath, mysqlDirPath, dbUser, dbPassword, dbscalePort, DBScaleScript)
 
-	/*** install start scripts ***/
-	startScriptPath := installPath + "/dbscale-start.sh"
-	startf, err := os.Create(startScriptPath)
-	Check(err)
-	startf.Write([]byte(startAndStopScript["startScript"]))
-	err = startf.Chmod(0755)
-	Check(err)
-	startf.Close()
+	/*** install DBScale scripts ***/
+	for scriptName, script := range DBScaleScript {
+		scriptPath := installPath + "/" + scriptName
+		scriptf, err := os.Create(scriptPath)
+		Check(err)
+		scriptf.Write([]byte(script))
+		err = scriptf.Chmod(0755)
+		Check(err)
+		scriptf.Close()
+	}
+}
 
-	/*** install stop scripts ***/
-	stopScriptPath := installPath + "/dbscale-stop.sh"
-	stopf, err := os.Create(stopScriptPath)
-	Check(err)
-	stopf.Write([]byte(startAndStopScript["stopScript"]))
-	err = stopf.Chmod(0755)
-	Check(err)
-	stopf.Close()
+func InitPartitionData(dbscalePort int, dbUser string, dbPassword string) {
+	stmts := []string{
+		"create table part_tb01 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
+		"create table part_tb02 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
+		"insert into part_tb01 values (1, 1, 'hello world.')",
+		"insert into part_tb01 values (2, 2, 'welecome to dbscale.')",
+		"insert into part_tb01 values (3, 3, 'this is a demo partition table.')",
+		"insert into part_tb01 values (4, 4, 'plz try and have fun.')",
+	}
+	for i := 5; i < 101; i++ {
+		sql := "insert into part_tb01 values (%d, %d, 'this is test text%d')"
+		sql = fmt.Sprintf(sql, i, i, i)
+		stmts = append(stmts, sql)
+	}
+	dsn := "%s:%s@tcp(127.0.0.1:%d)/test"
+	dsn = fmt.Sprintf(dsn, dbUser, dbPassword, dbscalePort)
+	RunOperat(dsn, stmts)
 }
