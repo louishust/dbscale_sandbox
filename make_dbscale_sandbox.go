@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	utils "github.com/louishust/dbscale-sandbox/utils"
+	utils "github.com/louishust/dbscale_sandbox/utils"
 	"os"
 	"os/user"
 )
