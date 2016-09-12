@@ -8,12 +8,19 @@ Once installed, the sandbox is easily used and maintained, without using complex
 
 Shard sandbox with replications can be used.
 
+
+## How to get and install
+---------------
+
+```
+go get github.com/louishust/dbscale_sandbox
+```
+
 ## How to build
 -------------
 
 ```
-cd dbscale_sandbox
-go build
+go build github.com/louishust/dbscale_sandbox
 ```
 
 
@@ -21,6 +28,5 @@ go build
 ------------
 
 ```
-cd utils
-go test -test.v
+go test -test.v github.com/louishust/dbscale_sandbox/utils
 ```
