@@ -12,6 +12,10 @@ import (
 	"strings"
 )
 
+var (
+	grantsCode string
+)
+
 func FindMySQLInstallDir() (string, error) {
 	var cmd = exec.Command("which", "mysqld")
 	var out bytes.Buffer
@@ -55,39 +59,8 @@ func Check(e error) {
 
 func InitMySQLConfigFile(port int, user string, password string,
 	mysqlDir string, sandbox string, filename string, retChan chan error) {
-	format := `[mysql]
-prompt='mysql [\h] {\u} (\d) > '
-#
 
-[client]
-user               = %s
-password           = %s
-port               = %d
-socket             = %s/mysql_sandbox%d.sock
-
-[mysqld]
-user               = %s
-port               = %d
-socket             = %s/mysql_sandbox%d.sock
-basedir            = %s
-datadir            = %s/data
-tmpdir             = %s/tmp
-lower_case_table_names = 1
-pid-file           = %s/data/mysql_sandbox%d.pid
-bind-address       = 127.0.0.1
-gtid_mode          = on
-enforce-gtid-consistency = 1
-net_write_timeout=1800
-net_read_timeout=1800
-max_allowed_packet=16777216
-skip_name_resolve=1
-log-bin=bin
-log-slave-updates
-server-id          = %d
-skip_slave_start
-`
-
-	context := fmt.Sprintf(format, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port, port)
+	context := fmt.Sprintf(config, user, password, port, sandbox, port, user, port, sandbox, port, mysqlDir, sandbox, sandbox, sandbox, port, port)
 	f, err := os.Create(filename)
 	defer f.Close()
 
@@ -119,17 +92,21 @@ func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
 }
 
 func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
-	var mysql_install_db = mysqlDir + "/scripts/mysql_install_db"
+	var mysql_install_db = "scripts/mysql_install_db"
+	var share_dir = mysqlDir + "/share"
 	var option1 = "--basedir=" + mysqlDir
 	var option2 = "--datadir=" + dataDir
-	var cmd = exec.Command(mysql_install_db, option1, option2)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	var err = cmd.Run()
+	var option3 = "--lc-messages-dir=" + share_dir
+	var cmd = exec.Command(mysql_install_db, option1, option2, option3)
+	cmd.Dir = mysqlDir
+	cmd.Stderr = os.Stdout
+	err := cmd.Run()
+	Check(err)
 	retChan <- err
 }
 
-func MySQLInstallReplication(mysqlDir string, installPath string, mysqlPackagePath string, instanceDir2Port map[string]int) {
+func MySQLInstallMultiDBs(mysqlDir string, installPath string, mysqlPackagePath string, instanceDir2Port map[string]int) {
+	fmt.Println("Installing all MySQLs...")
 	/*** judge weather need to decompress MySQL ***/
 	if mysqlPackagePath != "" {
 		Decompress(mysqlPackagePath, installPath)
@@ -160,162 +137,15 @@ func MySQLInstallReplication(mysqlDir string, installPath string, mysqlPackagePa
 }
 
 func InitMySQLScripts(mysqlDirPath string, instanceDir string, port int, scriptsDict map[string]string) {
-	startScript := `#!/bin/bash
-BASEDIR='%s'
-export LD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$LD_LIBRARY_PATH
-export DYLD_LIBRARY_PATH=$BASEDIR_/lib:$BASEDIR/lib/mysql:$DYLD_LIBRARY_PATH
-MYSQLD_SAFE="$BASEDIR/bin/mysqld_safe"
-SBDIR="%s"
-PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
 
-if [ ! -f $MYSQLD_SAFE ]
-then
-    echo "mysqld_safe not found in $BASEDIR/bin/"
-    exit 1
-fi
-MYSQLD_SAFE_OK=%ssh -n $MYSQLD_SAFE 2>&1%s
-if [ "$MYSQLD_SAFE_OK" != "" ]
-then
-    echo "$MYSQLD_SAFE has errors"
-    echo "((( $MYSQLD_SAFE_OK )))"
-    exit 1
-fi
-
-is_running()
-{
-    if [ -f $PIDFILE ]
-    then
-        MYPID=$(cat $PIDFILE)
-        ps -p $MYPID | grep $MYPID
-    fi
-}
-
-TIMEOUT=180
-if [ -n "$(is_running)" ]
-then
-    echo "sandbox server already started (found pid file $PIDFILE)"
-else
-    if [ -f $PIDFILE ]
-    then
-        # Server is not running. Removing stale pid-file
-        rm -f $PIDFILE
-    fi
-    CURDIR=%spwd%s
-    cd $BASEDIR
-    $MYSQLD_SAFE --defaults-file=$SBDIR/my.sandbox.cnf $@ > /dev/null 2>&1 &
-    cd $CURDIR
-    ATTEMPTS=1
-    while [ ! -f $PIDFILE ] 
-    do
-        ATTEMPTS=$(( $ATTEMPTS + 1 ))
-        echo -n "."
-        if [ $ATTEMPTS = $TIMEOUT ]
-        then
-            break
-        fi
-        sleep 1
-    done
-fi
-
-if [ -f $PIDFILE ]
-then
-    echo " sandbox server started"
-    #if [ -f $SBDIR/needs_reload ]
-    #then
-    #    if [ -f $SBDIR/rescue_mysql_dump.sql ]
-    #    then
-    #        $SBDIR/use mysql < $SBDIR/rescue_mysql_dump.sql
-    #    fi
-    #    rm $SBDIR/needs_reload
-    #fi
-else
-    echo " sandbox server not started yet"
-    exit 1
-fi
-`
 	backQuotes := "`"
 	scriptsDict["start"] = fmt.Sprintf(startScript, mysqlDirPath, instanceDir, port, backQuotes, backQuotes, backQuotes, backQuotes)
-	stopScript := `#!/bin/bash
-BASEDIR="%s"
-SBDIR="%s"
-export LD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$LD_LIBRARY_PATH
-export DYLD_LIBRARY_PATH=$BASEDIR/lib:$BASEDIR/lib/mysql:$DYLD_LIBRARY_PATH
-MYSQL_ADMIN="$BASEDIR/bin/mysqladmin"
-PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
 
-is_running()
-{
-    if [ -f $PIDFILE ]
-    then
-        MYPID=$(cat $PIDFILE)
-        ps -p $MYPID | grep $MYPID
-    fi
-}
-
-if [ -n "$(is_running)" ]
-then
-    $MYSQL_ADMIN --defaults-file=$SBDIR/my.sandbox.cnf $MYCLIENT_OPTIONS shutdown
-    sleep 1
-else
-    if [ -f $PIDFILE ]
-    then
-        rm -f $PIDFILE
-    fi
-fi
-
-if [ -n "$(is_running)" ]
-then
-    # use the send_kill script if the server is not responsive
-    $SBDIR/send_kill
-fi
-`
 	scriptsDict["stop"] = fmt.Sprintf(stopScript, mysqlDirPath, instanceDir, port)
-	sendKillScript := `#!/bin/bash
-SBDIR="%s"
-PIDFILE="$SBDIR/data/mysql_sandbox%d.pid"
-TIMEOUT=30
 
-is_running()
-{
-    if [ -f $PIDFILE ]
-    then
-        MYPID=$(cat $PIDFILE)
-        ps -p $MYPID | grep $MYPID
-    fi
-}
-
-
-if [ -n "$(is_running)" ]
-then
-    MYPID=%scat $PIDFILE%s
-    echo "Attempting normal termination --- kill -15 $MYPID"
-    kill -15 $MYPID
-    # give it a chance to exit peacefully
-    ATTEMPTS=1
-    while [ -f $PIDFILE ]
-    do
-        ATTEMPTS=$(( $ATTEMPTS + 1 ))
-        if [ $ATTEMPTS = $TIMEOUT ]
-        then
-            break
-        fi
-        sleep 1
-    done
-    if [ -f $PIDFILE ]
-    then
-        echo "SERVER UNRESPONSIVE --- kill -9 $MYPID"
-        kill -9 $MYPID
-        rm -f $PIDFILE
-    fi
-else
-    # server not running - removing stale pid-file
-    if [ -f $PIDFILE ]
-    then
-        rm -f $PIDFILE
-    fi
-fi
-`
 	scriptsDict["send_kill"] = fmt.Sprintf(sendKillScript, instanceDir, port, backQuotes, backQuotes)
+
+	scriptsDict["use"] = fmt.Sprintf(useScript, mysqlDirPath, mysqlDirPath, mysqlDirPath, mysqlDirPath, instanceDir, mysqlDirPath, port, "`", "`", "`", "+%%Y-%%m-%%d %%H:%%M:%%S", "`")
 }
 
 func InitMySQLScript4All(installPath string, scriptsDict map[string]string) {
@@ -339,6 +169,7 @@ done
 }
 
 func InstallMySQLScripts(mysqlDirPath string, installPath string, instanceDir2Port map[string]int) {
+	fmt.Println("Installing MySQL Scripts...")
 	mysqlScriptsDict := make(map[string]string)
 	mysqlScript4AllDict := make(map[string]string)
 
@@ -367,24 +198,29 @@ func InstallMySQLScripts(mysqlDirPath string, installPath string, instanceDir2Po
 		scriptFile.Chmod(0744)
 		scriptFile.Close()
 	}
+
+	/*** Install Grant scripts */
+	grantsCode = MySQLInstallGrantFile(mysqlDirPath, installPath)
 }
 
 func StartMySQL(installPath string) {
+	fmt.Println("Starting MySQL...")
 	cmd := exec.Command(installPath + "/startallmysql")
+	cmd.Stderr = os.Stdout
 	cmd.Dir = installPath
 	err := cmd.Run()
 	Check(err)
 }
 
-func InitGrantScripts(scripts map[string]string, options map[string]string) {
+func InitGrantScripts(scripts map[string]string) {
 	/** get grants options **/
-	dbUser := options["dbUser"]
-	rwUser := options["rwUser"]
-	roUser := options["roUser"]
-	remoteAccess := options["remoteAccess"]
-	dbPassword := options["dbPassword"]
-	replUser := options["replUser"]
-	replPassword := options["replPassword"]
+	dbUser := Options["dbUser"]
+	rwUser := Options["rwUser"]
+	roUser := Options["roUser"]
+	remoteAccess := Options["remoteAccess"]
+	dbPassword := Options["dbPassword"]
+	replUser := Options["replUser"]
+	replPassword := Options["replPassword"]
 
 	/** init grants code **/
 	grantsMySQLFormat := `set password=password('%s');
@@ -440,10 +276,10 @@ create schema if not exists test;
 	scripts["grants_5_7_6.mysql"] = grants576Mysql
 }
 
-func MySQLInstallGrantFile(mysqlDirPath string, installPath string, options map[string]string) string {
+func MySQLInstallGrantFile(mysqlDirPath string, installPath string) string {
 	/*** init grants scripts ***/
 	scripts := make(map[string]string)
-	InitGrantScripts(scripts, options)
+	InitGrantScripts(scripts)
 
 	/*** judge version ***/
 	verP1, verP2, verP3, err := GetMySQLVersion(mysqlDirPath)
@@ -472,23 +308,14 @@ func MySQLInstallGrantFile(mysqlDirPath string, installPath string, options map[
 	return code
 }
 
-func MySQLInstallRepGrantFile(grantsCode string, instanceDir2Port map[string]int) {
+func MySQLInitPrivileges(instanceDir2Port map[string]int) {
+	fmt.Println("Init MySQL Privileges...")
 	for dir, port := range instanceDir2Port {
 		socketPath := fmt.Sprintf("%s/mysql_sandbox%d.sock", dir, port)
 		dsn := "root:@unix(" + socketPath + ")/mysql"
 		stmts := strings.Split(grantsCode, "\n")
 		RunOperat(dsn, stmts)
 	}
-}
-
-func InitGrantOptions(options map[string]string) {
-	options["dbUser"] = "dbscale"
-	options["dbPassword"] = "dbscale"
-	options["remoteAccess"] = "127.%"
-	options["roUser"] = "dbscale_ro"
-	options["rwUser"] = "dbscale_rw"
-	options["replUser"] = "rdbscale"
-	options["replPassword"] = "rdbscale"
 }
 
 func RunOperat(dsn string, stmts []string) {
@@ -499,4 +326,16 @@ func RunOperat(dsn string, stmts []string) {
 		Check(err)
 	}
 	db.Close()
+}
+
+func InstallAndStartMySQL(mysqlDir string, installPath string, mysqlPackagePath string, instanceDir2Port map[string]int) {
+	MySQLInstallMultiDBs(mysqlDir, installPath, mysqlPackagePath, instanceDir2Port)
+
+	InstallMySQLScripts(mysqlDir, installPath, instanceDir2Port)
+
+	/** start MySQL */
+	StartMySQL(installPath)
+
+	/** execute grants options **/
+	MySQLInitPrivileges(instanceDir2Port)
 }

@@ -117,6 +117,7 @@ exit 0
 }
 
 func InstallDBScale(dbscalePackagePath string, installPath string) {
+	fmt.Println("Installing DBScale...")
 	Decompress(dbscalePackagePath, installPath)
 	InitDBScaleServiceScript(installPath)
 }
@@ -239,6 +240,7 @@ partition-key = id
 }
 
 func InstallDBScaleConfig(dbUser string, dbPassword string, installPath string, mysqlStartPort int, dbscalePort int) {
+	fmt.Println("Initing DBScale Configure...")
 	config := InitDBScaleConfig(dbUser, dbPassword, installPath, mysqlStartPort, dbscalePort)
 	configPath := installPath + "/dbscale/dbscale.conf"
 	err := ioutil.WriteFile(configPath, []byte(config), 0644)
@@ -246,6 +248,7 @@ func InstallDBScaleConfig(dbUser string, dbPassword string, installPath string, 
 }
 
 func StartDBScale(installPath string) {
+	fmt.Println("Starting DBScale...")
 	cmd := exec.Command(installPath+"/dbscale/dbscale-service.sh", "start")
 	cmd.Dir = installPath + "/dbscale"
 	err := cmd.Run()
@@ -261,6 +264,7 @@ func InitDBScaleScripts(installPath string, mysqlDirPath string, dbUser string, 
 }
 
 func InstallDBscaleScripts(installPath string, mysqlDirPath string, dbUser string, dbPassword string, dbscalePort int) {
+	fmt.Println("Installing DBScale Scripts And Sandbox Scripts.")
 	/*** init stop&start scripts ***/
 	DBScaleScript := make(map[string]string)
 	InitDBScaleScripts(installPath, mysqlDirPath, dbUser, dbPassword, dbscalePort, DBScaleScript)
@@ -278,6 +282,7 @@ func InstallDBscaleScripts(installPath string, mysqlDirPath string, dbUser strin
 }
 
 func InitPartitionData(dbscalePort int, dbUser string, dbPassword string) {
+	fmt.Println("Initing Partition Data.")
 	stmts := []string{
 		"create table part_tb01 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
 		"create table part_tb02 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
@@ -294,4 +299,15 @@ func InitPartitionData(dbscalePort int, dbUser string, dbPassword string) {
 	dsn := "%s:%s@tcp(127.0.0.1:%d)/test"
 	dsn = fmt.Sprintf(dsn, dbUser, dbPassword, dbscalePort)
 	RunOperat(dsn, stmts)
+}
+
+func InstallAndStartScale(mysqlDirPath string, dbscalePackagePath string, installPath string, mysqlStartPort int, dbscalePort int) {
+	InstallDBScale(dbscalePackagePath, installPath)
+	InstallDBScaleConfig(Options["dbUser"], Options["dbPassword"], installPath, mysqlStartPort, dbscalePort)
+	StartDBScale(installPath)
+	InstallDBscaleScripts(installPath, mysqlDirPath, Options["dbUser"], Options["dbPassword"], dbscalePort)
+
+	InstallScripts4All(installPath)
+
+	InitPartitionData(dbscalePort, Options["dbUser"], Options["dbPassword"])
 }

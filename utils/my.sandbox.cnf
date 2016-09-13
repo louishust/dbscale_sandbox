@@ -1,4 +1,3 @@
-
 [mysql]
 prompt='mysql [\h] {\u} (\d) > '
 #
@@ -7,15 +6,26 @@ prompt='mysql [\h] {\u} (\d) > '
 user               = msandbox
 password           = msandbox
 port               = 3306
-socket             = /tmp/mysql_sandbox3306.sock
+socket             = /tmp/msandbox_1234/mysql_sandbox3306.sock
 
 [mysqld]
 user               = msandbox
 port               = 3306
-socket             = /tmp/mysql_sandbox3306.sock
-basedir            = /usr/local/mysql
-datadir            = /home/loushuai/msandbox_1234/data
-tmpdir             = /home/loushuai/msandbox_1234/tmp
-lower_case_table_names = 0
-pid-file           = /home/loushuai/msandbox_1234/data/mysql_sandbox3306.pid
-bind-address       = 127.0.0.1
+socket             = /tmp/msandbox_1234/mysql_sandbox3306.sock
+basedir            = /home/vagrant/sandbox/5.6.26
+datadir            = /tmp/msandbox_1234/data
+tmpdir             = /tmp/msandbox_1234/tmp
+lower_case_table_names = 1
+pid-file           = /tmp/msandbox_1234/data/mysql_sandbox3306.pid
+bind-address       = 0.0.0.0
+innodb_buffer_pool_size = 5242880
+gtid_mode          = on
+enforce-gtid-consistency = 1
+net_write_timeout=1800
+net_read_timeout=1800
+max_allowed_packet=16777216
+skip_name_resolve=1
+log-bin=bin
+log-slave-updates
+server-id          = 3306
+skip_slave_start
