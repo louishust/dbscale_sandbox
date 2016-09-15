@@ -6,6 +6,7 @@ import (
 	utils "github.com/louishust/dbscale_sandbox/utils"
 	"os"
 	"os/user"
+	"strings"
 )
 
 var (
@@ -41,6 +42,19 @@ func parse_options() {
 
 	if *dbscalePackagePath == "" {
 		fmt.Println("dbscale-package-path must be declare!")
+		os.Exit(1)
+	}
+
+	/** check dbscale package path */
+	fileinfo, err := os.Stat(*dbscalePackagePath)
+	if err != nil {
+		fmt.Println("dbscale-package-path:" + *dbscalePackagePath + " no such file!")
+		os.Exit(1)
+	} else if fileinfo.IsDir() {
+		fmt.Println("dbscale-package-path:" + *dbscalePackagePath + "should be a file but not a directory!")
+		os.Exit(1)
+	} else if !strings.HasSuffix(fileinfo.Name(), "gz") && !strings.HasSuffix(fileinfo.Name(), ".bz2") {
+		fmt.Println("dbscale-package-path:" + *dbscalePackagePath + "should be gz or bz2 file!")
 		os.Exit(1)
 	}
 

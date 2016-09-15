@@ -99,7 +99,7 @@ func MySQLInstallDB(mysqlDir string, dataDir string, retChan chan error) {
 	var option3 = "--lc-messages-dir=" + share_dir
 	var cmd = exec.Command(mysql_install_db, option1, option2, option3)
 	cmd.Dir = mysqlDir
-	cmd.Stderr = os.Stdout
+	// cmd.Stderr = os.Stdout
 	err := cmd.Run()
 	Check(err)
 	retChan <- err
@@ -159,11 +159,13 @@ done
 	backQuotes := "`"
 	scriptsDict["startallmysql"] = fmt.Sprintf(startAllMySQLScript, backQuotes, installPath, backQuotes)
 	stopAllMySQLScript := `#!/bin/bash
+echo -e "Stopping All MySQL Instances...\c"
 instanceScript=%sfind %s -maxdepth 3 -mindepth 2 -type f -name stop%s
 for i in $instanceScript;
 do
     $i $@
 done
+echo -e "done!"
 `
 	scriptsDict["stopallmysql"] = fmt.Sprintf(stopAllMySQLScript, backQuotes, installPath, backQuotes)
 }
@@ -206,7 +208,7 @@ func InstallMySQLScripts(mysqlDirPath string, installPath string, instanceDir2Po
 func StartMySQL(installPath string) {
 	fmt.Println("Starting MySQL...")
 	cmd := exec.Command(installPath + "/startallmysql")
-	cmd.Stderr = os.Stdout
+	// cmd.Stderr = os.Stdout
 	cmd.Dir = installPath
 	err := cmd.Run()
 	Check(err)
