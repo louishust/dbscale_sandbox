@@ -20,7 +20,6 @@ tmpdir             = %s/tmp
 lower_case_table_names = 1
 pid-file           = %s/data/mysql_sandbox%d.pid
 bind-address       = 0.0.0.0
-innodb_buffer_pool_size = 5242880
 gtid_mode          = on
 enforce-gtid-consistency = 1
 net_write_timeout=1800
@@ -31,6 +30,11 @@ log-bin=bin
 log-slave-updates
 server-id          = %d
 skip_slave_start
+innodb_buffer_pool_size = 5242880
+innodb_read_io_threads=1
+innodb_write_io_threads=1
+innodb_purge_threads=1
+performance_schema=OFF
 `
 
 var startScript = `#!/bin/bash
