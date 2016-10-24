@@ -14,9 +14,11 @@ func TestFindMySQLInstallDir(t *testing.T) {
 }
 
 func TestMySQLInstallDB(t *testing.T) {
-	var mysqlDir, _ = FindMySQLInstallDir()
+	var mysqlDir = "/home/vagrant/sandbox/5.6.26"
 	t.Log(mysqlDir)
-	var err = MySQLInstallDB(mysqlDir, "/tmp/data")
+	retChan := make(chan error, 1)
+	go MySQLInstallDB(mysqlDir, "/tmp/data", retChan)
+	err := <-retChan
 	if err != nil {
 		t.Error(err)
 	}
@@ -33,8 +35,10 @@ func TestGetMySQLVersion(t *testing.T) {
 }
 
 func TestInitMySQLConfigFile(t *testing.T) {
-	err := InitMySQLConfigFile(3306, "msandbox", "msandbox", "/usr/local/mysql", "/home/loushuai/msandbox_1234", "my.sandbox.cnf")
+	retChan := make(chan error, 1)
+	go InitMySQLConfigFile(3306, "msandbox", "msandbox", "/home/vagrant/sandbox/5.6.26", "/tmp/msandbox_1234", "my.sandbox.cnf", retChan)
 
+	err := <-retChan
 	if err != nil {
 		t.Error(err)
 	}
