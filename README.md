@@ -30,3 +30,19 @@ go build github.com/louishust/dbscale_sandbox
 ```
 go test -test.v github.com/louishust/dbscale_sandbox/utils
 ```
+
+## How to use
+------------
+
+### Options
+```
+dbscale-package-path:     DBScale package path.
+dbscale-port:             DBScale port (default 13001).
+install-path:             path to install (default "/userHomePath/sandboxes").
+mysql-dir                 MySQL installed directory, if not declare, sandbox will auto find.
+mysql-package-path        MySQL package path. If be declared, MySQL will be installed in install-path. This option priority is higher than mysql-path.
+mysql-start-port          MySQL start port (default 3210). MySQL port start with mysql-start-port, and next 5 port.
+```
+
+### Example
+./make_dbscale_sandbox -dbscale-package-path /opt/DBScale-1.5-1512.tar.gz  -mysql-package-path /opt/mysql-5.7.13-linux-glibc2.5-x86_64.tar.gz
