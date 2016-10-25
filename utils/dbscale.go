@@ -78,8 +78,8 @@ func InstallDBscaleScripts(installPath string, mysqlDirPath string, dbUser strin
 func InitPartitionData(dbscalePort int, dbUser string, dbPassword string) {
 	fmt.Println("Initing Partition Data...")
 	stmts := []string{
-		"create table part_tb01 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
-		"create table part_tb02 (id int primary key, c1 int, c2 varchar(20)) engine=innodb",
+		"create table part_tb01 (id int primary key, c1 int, c2 varchar(50)) engine=innodb",
+		"create table part_tb02 (id int primary key, c1 int, c2 varchar(50)) engine=innodb",
 		"insert into part_tb01 values (1, 1, 'hello world.')",
 		"insert into part_tb01 values (2, 2, 'welecome to dbscale.')",
 		"insert into part_tb01 values (3, 3, 'this is a demo partition table.')",
