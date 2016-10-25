@@ -91,23 +91,23 @@ func GetMySQLVersion(mysqlDir string) (int, int, int, error) {
 	}
 }
 
-func MySQLInstallDB(version string, mysqlDir string, dataDir string, cnfPath string, retChan chan error) {
+func MySQLInstallDB(version bool, mysqlDir string, dataDir string, cnfPath string, retChan chan error) {
 	var cmdPath string
 	var option1 string
 	var option2 string
 
 	var share_dir = mysqlDir + "/share"
 
-	if version == "older" {
-		cmdPath = "scripts/mysql_install_db"
-
-		option1 = "--basedir=" + mysqlDir
-		option2 = "--datadir=" + dataDir
-	} else {
+	if version {
 		cmdPath = "bin/mysqld"
 
 		option1 = "--defaults-file=" + cnfPath
 		option2 = "--initialize-insecure"
+	} else {
+		cmdPath = "scripts/mysql_install_db"
+
+		option1 = "--basedir=" + mysqlDir
+		option2 = "--datadir=" + dataDir
 	}
 
 	var option3 = "--lc-messages-dir=" + share_dir
@@ -137,12 +137,12 @@ func MySQLInstallMultiDBs(mysqlDir string, installPath string, mysqlPackagePath 
 	Check(err)
 
 	/*** install grants file ***/
-	var version string
+	var version bool
 
 	if (verP1*256*256 + verP2*256 + verP3) >= (5*256*256 + 7*256) {
-		version = "newer"
+		version = true
 	} else {
-		version = "older"
+		version = false
 	}
 
 	retChan := make(chan error, 12)
