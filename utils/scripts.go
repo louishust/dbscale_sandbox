@@ -326,7 +326,6 @@ max-replication-delay = 500
 default-session-variables = CHARACTER_SET_CLIENT:CHARACTER_SET_RESULTS:CHARACTER_SET_CONNECTION:NET_READ_TIMEOUT:TIME_ZONE:SQL_SAFE_UPDATES:SQL_MODE:AUTOCOMMIT:TX_ISOLATION:SQL_SELECT_LIMIT
 support-gtid=1
 authenticate-source = auth
-is-auth-schema = 1
 use-partial-parse = 1
 lower-case-table-names = 0
 thread-pool-min = 50
