@@ -68,6 +68,7 @@ func decompressgzip(compressedFilePath string, targetPath string) {
 			Check(err)
 			_, err = io.Copy(fw, tr)
 			Check(err)
+			fw.Close()
 			os.Chmod(targetFilePath, os.FileMode(hdr.Mode))
 		}
 	}
