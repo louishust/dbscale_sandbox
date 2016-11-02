@@ -115,7 +115,8 @@ func MySQLInstallDB(version bool, mysqlDir string, dataDir string, cnfPath strin
 	var cmd = exec.Command(cmdPath, option1, option2, option3)
 
 	cmd.Dir = mysqlDir
-	// cmd.Stderr = os.Stdout
+
+	cmd.Stderr = os.Stdout
 	err := cmd.Run()
 	Check(err)
 	retChan <- err
@@ -237,7 +238,7 @@ func InstallMySQLScripts(mysqlDirPath string, installPath string, instanceDir2Po
 func StartMySQL(installPath string) {
 	fmt.Println("Starting MySQL...")
 	cmd := exec.Command(installPath + "/startallmysql")
-	// cmd.Stderr = os.Stdout
+	cmd.Stderr = os.Stdout
 	cmd.Dir = installPath
 	err := cmd.Run()
 	Check(err)

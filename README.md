@@ -34,6 +34,15 @@ go test -test.v github.com/louishust/dbscale_sandbox/utils
 ## How to use
 ------------
 
+### Prepare
+
+dbscale_sandbox must be run in "dbscale" user.
+
+```
+useradd dbscale
+su - dbscale
+```
+
 ### Options
 ```
 dbscale-package-path:     DBScale package path.
@@ -45,4 +54,6 @@ mysql-start-port          MySQL start port (default 3210). MySQL port start with
 ```
 
 ### Example
+```
 ./make_dbscale_sandbox -dbscale-package-path /opt/DBScale-1.5-1512.tar.gz  -mysql-package-path /opt/mysql-5.7.13-linux-glibc2.5-x86_64.tar.gz
+```
