@@ -45,6 +45,7 @@ func StartDBScale(installPath string) {
 	fmt.Println("Starting DBScale...")
 	cmd := exec.Command(installPath+"/dbscale/dbscale-service.sh", "start")
 	cmd.Dir = installPath + "/dbscale"
+	cmd.Stderr = os.Stdout
 	err := cmd.Run()
 	Check(err)
 }
